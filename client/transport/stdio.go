@@ -32,6 +32,8 @@ type Stdio struct {
 	responses      map[string]chan *JSONRPCResponse
 	mu             sync.RWMutex
 	done           chan struct{}
+	exit           chan struct{}
+	exitErr        error
 	onNotification func(mcp.JSONRPCNotification)
 	notifyMu       sync.RWMutex
 	onRequest      RequestHandler
@@ -113,6 +115,7 @@ func NewStdioWithOptions(
 		done:      make(chan struct{}),
 		ctx:       context.Background(),
 		logger:    util.DefaultLogger(),
+		exit:      make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -120,6 +123,15 @@ func NewStdioWithOptions(
 	}
 
 	return s
+}
+
+func (c *Stdio) Exit() chan struct{} {
+	return c.exit
+}
+
+func (c *Stdio) ExitErr() error {
+	<-c.exit
+	return c.exitErr
 }
 
 func (c *Stdio) Start(ctx context.Context) error {
@@ -185,6 +197,16 @@ func (c *Stdio) spawnCommand(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start command: %w", err)
 	}
+
+	go func() {
+		defer close(c.exit)
+		state, err := cmd.Process.Wait()
+		if err != nil {
+			c.exitErr = err
+		} else if !state.Success() {
+			c.exitErr = &exec.ExitError{ProcessState: state}
+		}
+	}()
 
 	return nil
 }
