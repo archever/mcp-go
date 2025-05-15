@@ -29,6 +29,8 @@ type Stdio struct {
 	responses      map[string]chan *JSONRPCResponse
 	mu             sync.RWMutex
 	done           chan struct{}
+	exit           chan struct{}
+	exitErr        error
 	onNotification func(mcp.JSONRPCNotification)
 	notifyMu       sync.RWMutex
 }
@@ -63,9 +65,19 @@ func NewStdio(
 
 		responses: make(map[string]chan *JSONRPCResponse),
 		done:      make(chan struct{}),
+		exit:      make(chan struct{}),
 	}
 
 	return client
+}
+
+func (c *Stdio) Exit() chan struct{} {
+	return c.exit
+}
+
+func (c *Stdio) ExitErr() error {
+	<-c.exit
+	return c.exitErr
 }
 
 func (c *Stdio) Start(ctx context.Context) error {
@@ -119,6 +131,16 @@ func (c *Stdio) spawnCommand(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start command: %w", err)
 	}
+
+	go func() {
+		defer close(c.exit)
+		state, err := cmd.Process.Wait()
+		if err != nil {
+			c.exitErr = err
+		} else if !state.Success() {
+			c.exitErr = &exec.ExitError{ProcessState: state}
+		}
+	}()
 
 	return nil
 }
