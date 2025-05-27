@@ -50,7 +50,7 @@ type CallToolRequest struct {
 
 type CallToolParams struct {
 	Name      string `json:"name"`
-	Arguments any    `json:"arguments,omitempty"`
+	Arguments any    `json:"arguments"`
 	Meta      *Meta  `json:"_meta,omitempty"`
 }
 
